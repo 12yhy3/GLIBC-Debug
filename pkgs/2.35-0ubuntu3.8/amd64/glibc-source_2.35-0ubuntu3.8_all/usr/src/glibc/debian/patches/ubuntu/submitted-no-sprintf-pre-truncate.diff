@@ -1,0 +1,36 @@
+Description: when a program is compiled with -D_FORTIFY_SOURCE=2, the
+ vsprintf_chk function is called to handle sprintf/snprintf, but it
+ needlessly pretruncates the destination which changes the results of
+ sprintf(foo, "%sbar", baz). This patch restores the original behavior
+ that many programs have depended on.
+Bug: http://sourceware.org/bugzilla/show_bug.cgi?id=7075
+Bug-Ubuntu: https://launchpad.net/bugs/305901
+Bug-Debian: http://bugs.debian.org/cgi-bin/bugreport.cgi?bug=563637
+Author: Kees Cook <kees@ubuntu.com>
+Author: Adam Conrad <adconrad@ubuntu.com>
+
+--- a/libio/iovsprintf.c
++++ b/libio/iovsprintf.c
+@@ -85,7 +85,6 @@
+   if ((mode_flags & PRINTF_CHK) != 0)
+     {
+       _IO_JUMPS (&sf._sbf) = &_IO_str_chk_jumps;
+-      string[0] = '\0';
+     }
+   else
+     _IO_JUMPS (&sf._sbf) = &_IO_str_jumps;
+--- a/libio/tst-sprintf-ub.c
++++ b/libio/tst-sprintf-ub.c
+@@ -38,12 +38,7 @@
+   va_list args;
+   char *arg;
+ 
+-  /* Expected results for fortified and non-fortified sprintf.  */
+-#if defined _FORTIFY_SOURCE && _FORTIFY_SOURCE > 1
+-  const char *expected = "CD";
+-#else
+   const char *expected = "ABCD";
+-#endif
+ 
+   va_start (args, buf);
+   arg = va_arg (args, char *);

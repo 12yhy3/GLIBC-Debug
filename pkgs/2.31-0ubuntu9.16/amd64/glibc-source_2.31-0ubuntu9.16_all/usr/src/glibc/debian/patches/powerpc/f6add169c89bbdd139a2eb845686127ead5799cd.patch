@@ -1,0 +1,31 @@
+From f6add169c89bbdd139a2eb845686127ead5799cd Mon Sep 17 00:00:00 2001
+From: Tulio Magno Quites Machado Filho <tuliom@linux.ibm.com>
+Date: Tue, 21 Jul 2020 18:01:39 -0300
+Subject: [PATCH] powerpc: Fix POWER10 selection
+
+Add a line that was missing from a previous commit.
+Without increasing str, the null-byte is not validated, and
+_dl_string_platform returns -1.
+
+Fixes: d2ba3677da7a ("powerpc: Add support for POWER10")
+
+Reviewed-by: Carlos O'Donell <carlos@redhat.com>
+---
+ sysdeps/powerpc/dl-procinfo.h | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/sysdeps/powerpc/dl-procinfo.h b/sysdeps/powerpc/dl-procinfo.h
+index 497dc568e9..f07500619a 100644
+--- a/sysdeps/powerpc/dl-procinfo.h
++++ b/sysdeps/powerpc/dl-procinfo.h
+@@ -96,6 +96,7 @@ _dl_string_platform (const char *str)
+ 	  if (str[1] == '0')
+ 	    {
+ 	      ret = _DL_FIRST_PLATFORM + PPC_PLATFORM_POWER10;
++	      str++;
+ 	    }
+ 	  else
+ 	    return -1;
+-- 
+2.27.0
+

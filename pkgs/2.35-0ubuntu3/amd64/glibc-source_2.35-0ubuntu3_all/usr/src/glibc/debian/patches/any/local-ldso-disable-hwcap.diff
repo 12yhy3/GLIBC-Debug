@@ -1,0 +1,130 @@
+# DP: Allow hwcap's to be disabled with the existence of a file. This
+# DP: makes it easier to do upgrades with optimized (hwcap) library
+# DP: packages.
+# DP: Author: Rewritten by Daniel Jacobowitz <dan@debian.org>
+# DP: Upstream status: Debian-Specific
+# DP: Status Details: This isn't going to be acceptable upstream, we
+# DP:                 only need it because we support in-place upgrades.
+# DP: Date: 2003-10-28, (Updated 2005-01-02 gotom, 2007-05-20 aurel32)
+
+---
+ elf/dl-cache.c  |    8 ++++++++
+ elf/dl-hwcaps.c |   26 +++++++++++++++++++++++---
+ 2 files changed, 31 insertions(+), 3 deletions(-)
+
+--- a/elf/dl-hwcaps.c
++++ b/elf/dl-hwcaps.c
+@@ -22,6 +22,9 @@
+ #include <libintl.h>
+ #include <unistd.h>
+ #include <ldsodefs.h>
++#include <fcntl.h>
++#include <sysdep.h>
++#include <not-errno.h>
+ 
+ #include <dl-procinfo.h>
+ #include <dl-hwcaps.h>
+@@ -175,10 +178,27 @@
+   uint64_t masked = GLRO(dl_hwcap) & hwcap_mask;
+   size_t cnt = GLRO (dl_platform) != NULL;
+   size_t n, m;
++  struct r_strlenpair *temp;
+   struct r_strlenpair *result;
+   struct r_strlenpair *rp;
+   char *cp;
+ 
++#ifdef NEED_LD_SO_NOHWCAP
++  if (__access_noerrno ("/etc/ld.so.nohwcap", F_OK) == 0)
++    {
++      /* If hwcap is disabled, we only have the base directory to search.  */
++      result = (struct r_strlenpair *) malloc (sizeof (*result));
++      if (result == NULL)
++	goto no_memory;
++
++      result[0].str = (char *) result;  /* Does not really matter.  */
++      result[0].len = 0;
++
++      *sz = 1;
++      return result;
++    }
++#endif
++
+   /* glibc-hwcaps subdirectories.  These are exempted from the power
+      set construction below.  */
+   uint32_t hwcaps_subdirs_active = _dl_hwcaps_subdirs_active ();
+@@ -205,7 +225,7 @@
+   ++cnt;
+ 
+   /* Create temporary data structure to generate result table.  */
+-  struct r_strlenpair temp[cnt];
++  temp = (struct r_strlenpair *) alloca (cnt * sizeof (*temp));
+   m = 0;
+   for (n = 0; masked != 0; ++n)
+     if ((masked & (1ULL << n)) != 0)
+@@ -243,6 +263,9 @@
+ 	      && (cnt >= sizeof (size_t) * 8
+ 		  || total + (sizeof (*result) << 3)
+ 		     >= (1UL << (sizeof (size_t) * 8 - cnt + 3))))
++#ifdef NEED_LD_SO_NOHWCAP
++            no_memory:
++#endif
+ 	    _dl_signal_error (ENOMEM, NULL, NULL,
+ 			      N_("cannot create capability list"));
+ 
+--- a/elf/dl-cache.c
++++ b/elf/dl-cache.c
+@@ -26,6 +26,9 @@
+ #include <_itoa.h>
+ #include <dl-hwcaps.h>
+ #include <dl-isa-level.h>
++#include <fcntl.h>
++#include <sysdep.h>
++#include <not-errno.h>
+ 
+ #ifndef _DL_PLATFORMS_COUNT
+ # define _DL_PLATFORMS_COUNT 0
+@@ -203,9 +206,14 @@
+ {
+   /* Used by the HWCAP check in the struct file_entry_new case.  */
+   uint64_t platform = _dl_string_platform (GLRO (dl_platform));
++  int disable_hwcap = 0;
+   if (platform != (uint64_t) -1)
+     platform = 1ULL << platform;
+   uint64_t hwcap_mask = GET_HWCAP_MASK ();
++#ifdef NEED_LD_SO_NOHWCAP
++  if (__access_noerrno ("/etc/ld.so.nohwcap", F_OK) == 0)
++    disable_hwcap = 1;
++#endif
+ #define _DL_HWCAP_TLS_MASK (1LL << 63)
+   uint64_t hwcap_exclude = ~((GLRO (dl_hwcap) & hwcap_mask)
+ 			     | _DL_HWCAP_PLATFORM | _DL_HWCAP_TLS_MASK);
+@@ -300,6 +308,8 @@
+ 		      if (GLRO (dl_osversion)
+ 			  && libnew->osversion > GLRO (dl_osversion))
+ 			continue;
++		      if (disable_hwcap && libnew->hwcap != 0)
++			      continue;
+ 		      if (_DL_PLATFORMS_COUNT
+ 			  && (libnew->hwcap & _DL_HWCAP_PLATFORM) != 0
+ 			  && ((libnew->hwcap & _DL_HWCAP_PLATFORM)
+--- a/sysdeps/alpha/ldsodefs.h
++++ b/sysdeps/alpha/ldsodefs.h
+@@ -37,6 +37,8 @@
+ 				      struct La_alpha_retval *,		\
+ 				      const char *);
+ 
++#define NEED_LD_SO_NOHWCAP
++
+ #include_next <ldsodefs.h>
+ 
+ #endif
+--- /dev/null
++++ b/sysdeps/i386/ldsodefs.h
+@@ -0,0 +1,7 @@
++#ifndef __LDSODEFS_H
++
++#define NEED_LD_SO_NOHWCAP
++
++#include_next <ldsodefs.h>
++
++#endif

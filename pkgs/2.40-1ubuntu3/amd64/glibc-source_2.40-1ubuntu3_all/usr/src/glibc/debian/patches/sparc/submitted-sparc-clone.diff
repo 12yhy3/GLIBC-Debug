@@ -1,0 +1,27 @@
+https://sourceware.org/bugzilla/show_bug.cgi?id=31394
+https://bugs.debian.org/1063937
+
+--- glibc-2.37.orig/sysdeps/unix/sysv/linux/sparc/sparc32/clone.S
++++ glibc-2.37/sysdeps/unix/sysv/linux/sparc/sparc32/clone.S
+@@ -28,6 +28,9 @@
+ 	.text
+ ENTRY (__clone)
+ 	save	%sp,-96,%sp
++	save	%sp,-96,%sp
++	flushw
++	restore
+ 	cfi_def_cfa_register(%fp)
+ 	cfi_window_save
+ 	cfi_register(%o7, %i7)
+--- glibc-2.37.orig/sysdeps/unix/sysv/linux/sparc/sparc64/clone.S
++++ glibc-2.37/sysdeps/unix/sysv/linux/sparc/sparc64/clone.S
+@@ -32,6 +32,9 @@
+ 
+ ENTRY (__clone)
+ 	save	%sp, -192, %sp
++	save	%sp, -192, %sp
++	flushw
++	restore
+ 	cfi_def_cfa_register(%fp)
+ 	cfi_window_save
+ 	cfi_register(%o7, %i7)

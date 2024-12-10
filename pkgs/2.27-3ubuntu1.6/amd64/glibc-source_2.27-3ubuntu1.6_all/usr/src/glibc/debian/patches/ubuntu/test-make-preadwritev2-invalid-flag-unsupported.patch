@@ -1,0 +1,31 @@
+Author: Thadeu Lima de Souza Cascardo <cascardo@canonical.com>
+Forwarded: no
+Bug-Ubuntu: https://bugs.launchpad.net/ubuntu/+source/glibc/+bug/1770480
+Subject: make preadwritev2 invalid flags tests unsupported
+ New kernels allow new flags for preadv2 and pwritev2. Instead of failing
+ and exiting when those test succeeds or fail with an error different from
+ unsupported, fail with unsupported, which is equivalent to skipping the
+ test instead of failing it.
+Index: glibc-2.27/misc/tst-preadvwritev2-common.c
+===================================================================
+--- glibc-2.27.orig/misc/tst-preadvwritev2-common.c
++++ glibc-2.27/misc/tst-preadvwritev2-common.c
+@@ -42,14 +42,14 @@ do_test_with_invalid_flags (void)
+   char buf[32];
+   const struct iovec vec = { .iov_base = buf, .iov_len = sizeof (buf) };
+   if (preadv2 (temp_fd, &vec, 1, 0, invalid_flag) != -1)
+-    FAIL_EXIT1 ("preadv2 did not fail with an invalid flag");
++    FAIL_UNSUPPORTED ("preadv2 did not fail with an invalid flag");
+   if (errno != ENOTSUP)
+-    FAIL_EXIT1 ("preadv2 failure did not set errno to ENOTSUP (%d)", errno);
++    FAIL_UNSUPPORTED ("preadv2 failure did not set errno to ENOTSUP (%d)", errno);
+ 
+   /* This might fail for compat syscall (32 bits running on 64 bits kernel)
+      due a kernel issue.  */
+   if (pwritev2 (temp_fd, &vec, 1, 0, invalid_flag) != -1)
+-    FAIL_EXIT1 ("pwritev2 did not fail with an invalid flag");
++    FAIL_UNSUPPORTED ("pwritev2 did not fail with an invalid flag");
+   if (errno != ENOTSUP)
+-    FAIL_EXIT1 ("pwritev2 failure did not set errno to ENOTSUP (%d)", errno);
++    FAIL_UNSUPPORTED ("pwritev2 failure did not set errno to ENOTSUP (%d)", errno);
+ }

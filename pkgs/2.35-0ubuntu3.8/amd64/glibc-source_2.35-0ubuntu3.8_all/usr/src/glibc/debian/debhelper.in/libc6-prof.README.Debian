@@ -1,0 +1,14 @@
+README.Debian for libc6-prof
+---------------------------
+
+This package provides a version of the GNU Libc compiled for profiling
+in order to get profiling information from standard library functions
+such as malloc, read or open. The libraries are compiled enabling the
+-fno-omit-frame-pointer compiler option.
+
+In order to use the libraries run the program to be profiled with
+LD_LIBRARY_PATH set to the location where libc6-prof installed the libraries:
+
+ env LD_LIBRARY_PATH=/lib/libc6-prof/x86_64-linux-gnu foo
+
+ -- Balint Reczey <rbalint@ubuntu.com>, Wed, 17 Jun 2020 15:52:59 +0200

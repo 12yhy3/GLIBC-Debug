@@ -1,0 +1,99 @@
+commit 0e75c4a4634f44ad24a65fda01f571781ac79d5f
+Author: Samuel Thibault <samuel.thibault@ens-lyon.org>
+Date:   Wed Jul 17 14:06:25 2024 +0200
+
+    hurd: Fix pthread_self() without libpthread
+    
+    5476f8cd2e68 ("htl: move pthread_self info libc.") moved the htl
+    pthread_self() function from libpthread to libc, replacing the previous libc
+    stub that just returns 0. And 53da64d1cf36 ("htl: Initialize ___pthread_self
+    early") added initialization code which is needed before being able to
+    call pthread_self. It is currently in libpthread, and thus never called
+    before programs can call pthread_self from libc, which then segfaults
+    when accessing _pthread_self()->thread.
+    
+    This moves the initialization to libc itself, as initialized variables, so
+    pthread_self can always be called fine.
+
+diff --git a/htl/Versions b/htl/Versions
+index e1524117a0..69b79b4f1b 100644
+--- a/htl/Versions
++++ b/htl/Versions
+@@ -38,6 +38,7 @@ libc {
+     __pthread_cleanup_stack;
+     __pthread_total;
+     ___pthread_self;
++    __pthread_init_thread;
+   }
+ }
+ 
+diff --git a/sysdeps/mach/hurd/htl/pt-pthread_self.c b/sysdeps/mach/hurd/htl/pt-pthread_self.c
+index 04fa283aab..08ef2e4956 100644
+--- a/sysdeps/mach/hurd/htl/pt-pthread_self.c
++++ b/sysdeps/mach/hurd/htl/pt-pthread_self.c
+@@ -17,6 +17,13 @@
+    <https://www.gnu.org/licenses/>.  */
+ 
+ #include <pt-sysdep.h>
++#include <pt-internal.h>
+ 
+-__thread struct __pthread *___pthread_self;
++/* Initial thread structure used before libpthread is initialized, so various
++ * functions can already work at least basically.  */
++struct __pthread __pthread_init_thread = {
++	.thread = 1,
++};
++
++__thread struct __pthread *___pthread_self = &__pthread_init_thread;
+ libc_hidden_tls_def (___pthread_self)
+diff --git a/sysdeps/mach/hurd/htl/pt-sysdep.c b/sysdeps/mach/hurd/htl/pt-sysdep.c
+index 5372cbf77f..f5c1c246eb 100644
+--- a/sysdeps/mach/hurd/htl/pt-sysdep.c
++++ b/sysdeps/mach/hurd/htl/pt-sysdep.c
+@@ -26,10 +26,6 @@
+ #include <pt-internal.h>
+ #include <pthreadP.h>
+ 
+-/* Initial thread structure used temporarily during initialization, so various
+- * functions can already work at least basically.  */
+-static struct __pthread init_thread;
+-
+ static void
+ reset_pthread_total (void)
+ {
+@@ -51,10 +47,6 @@ _init_routine (void *stack)
+     /* Already initialized */
+     return;
+ 
+-  /* Initialize early thread structure.  */
+-  init_thread.thread = 1;
+-  ___pthread_self = &init_thread;
+-
+   /* Initialize the library.  */
+   ___pthread_init ();
+ 
+@@ -116,9 +108,9 @@ _init_routine (void *stack)
+ #endif
+ 
+   /* Copy over the thread-specific state */
+-  assert (!init_thread.thread_specifics);
++  assert (!__pthread_init_thread.thread_specifics);
+   memcpy (&thread->static_thread_specifics,
+-          &init_thread.static_thread_specifics,
++          &__pthread_init_thread.static_thread_specifics,
+           sizeof (thread->static_thread_specifics));
+ 
+   ___pthread_self = thread;
+diff --git a/sysdeps/mach/hurd/htl/pt-sysdep.h b/sysdeps/mach/hurd/htl/pt-sysdep.h
+index 09d9547a8e..ef7f509611 100644
+--- a/sysdeps/mach/hurd/htl/pt-sysdep.h
++++ b/sysdeps/mach/hurd/htl/pt-sysdep.h
+@@ -34,6 +34,8 @@
+ 
+ extern __thread struct __pthread *___pthread_self;
+ libc_hidden_tls_proto (___pthread_self)
++extern struct __pthread ___pthread_init_thread;
++libc_hidden_proto (___pthread_init_thread)
+ 
+ #ifdef DEBUG
+ #define _pthread_self()                                            \

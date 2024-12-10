@@ -1,0 +1,144 @@
+Keep compatibility with experimental implementation
+
+---
+ hurd/Makefile                         |    2 ++
+ hurd/Versions                         |    4 ++++
+ hurd/hurdexec.c                       |   28 ++++++++++++++++++++++++++++
+ sysdeps/mach/hurd/i386/libc.abilist   |    1 +
+ sysdeps/mach/hurd/spawni.c            |   13 +++++++++++++
+ sysdeps/mach/hurd/x86_64/libc.abilist |    1 +
+ 6 files changed, 49 insertions(+)
+
+--- a/hurd/Makefile
++++ b/hurd/Makefile
+@@ -49,8 +49,10 @@
+   hurd/auth_request \
+   hurd/crash \
+   hurd/exec \
++  hurd/exec_experimental \
+   hurd/exec_startup \
+   hurd/fs \
++  hurd/fs_experimental \
+   hurd/fsys \
+   hurd/ifsock \
+   hurd/interrupt \
+--- a/hurd/Versions
++++ b/hurd/Versions
+@@ -117,6 +117,10 @@
+     # functions used in macros & inline functions
+     __errno_location;
+   }
++  GLIBC_2.21 {
++    # "quasi-internal" functions
++    _hurd_exec_file_name;
++  }
+   GLIBC_2.26 {
+     # "quasi-internal" functions
+     _hurd_exec_paths;
+--- a/hurd/hurdexec.c
++++ b/hurd/hurdexec.c
+@@ -25,9 +25,12 @@
+ #include <hurd/fd.h>
+ #include <hurd/signal.h>
+ #include <hurd/id.h>
++#include <hurd/fs_experimental.h>
+ #include <assert.h>
+ #include <argz.h>
+ 
++#include <shlib-compat.h>
++
+ /* Overlay TASK, executing FILE with arguments ARGV and environment ENVP.
+    If TASK == mach_task_self (), some ports are dealloc'd by the exec server.
+    ARGV and ENVP are terminated by NULL pointers.
+@@ -39,6 +42,13 @@
+   return _hurd_exec_paths (task, file, NULL, NULL, argv, envp);
+ }
+ 
++error_t
++__hurd_exec_file_name (task_t task, file_t file, const char *filename,
++	    char *const argv[], char *const envp[])
++{
++  return _hurd_exec_paths (task, file, filename, filename, argv, envp);
++}
++
+ link_warning (_hurd_exec,
+ 	      "_hurd_exec is deprecated, use _hurd_exec_paths instead");
+ 
+@@ -442,6 +452,18 @@
+       /* Fall back for backwards compatibility.  This can just be removed
+          when __file_exec goes away.  */
+       if (err == MIG_BAD_ID)
++	err = __file_exec_file_name (file, task, flags,
++				    path ? path : "",
++				    args, argslen, env, envlen,
++				    dtable, MACH_MSG_TYPE_COPY_SEND, dtablesize,
++				    ports, MACH_MSG_TYPE_COPY_SEND,
++				    _hurd_nports,
++				    ints, INIT_INT_MAX,
++				    please_dealloc, pdp - please_dealloc,
++				    portnames, nportnames);
++      /* Fall back for backwards compatibility.  This can just be removed
++         when __file_exec goes away.  */
++      if (err == MIG_BAD_ID)
+ 	err = __file_exec (file, task, flags,
+ 			   args, argslen, env, envlen,
+ 			   dtable, MACH_MSG_TYPE_COPY_SEND, dtablesize,
+@@ -489,3 +511,9 @@
+   return err;
+ }
+ libc_hidden_def (_hurd_exec_paths)
++extern error_t _hurd_exec_file_name (task_t task,
++				     file_t file,
++				     const char *filename,
++				     char *const argv[],
++				     char *const envp[]);
++versioned_symbol (libc, __hurd_exec_file_name, _hurd_exec_file_name, GLIBC_2_21);
+--- a/sysdeps/mach/hurd/spawni.c
++++ b/sysdeps/mach/hurd/spawni.c
+@@ -30,6 +30,7 @@
+ #include <hurd/id.h>
+ #include <hurd/lookup.h>
+ #include <hurd/resource.h>
++#include <hurd/fs_experimental.h>
+ #include <assert.h>
+ #include <argz.h>
+ #include "spawn_int.h"
+@@ -830,6 +831,18 @@
+ 	   dtable, MACH_MSG_TYPE_COPY_SEND, dtablesize,
+ 	   ports, MACH_MSG_TYPE_COPY_SEND, _hurd_nports,
+ 	   ints, INIT_INT_MAX,
++	   NULL, 0, NULL, 0);
++
++	/* Fallback for backwards compatibility.  This can just be removed
++	   when __file_exec goes away.  */
++	if (err == MIG_BAD_ID)
++	  err = __file_exec_file_name
++	  (file, task,
++	   __sigismember (&_hurdsig_traced, SIGKILL) ? EXEC_SIGTRAP : 0,
++	   relpath, args, argslen, env, envlen,
++	   dtable, MACH_MSG_TYPE_COPY_SEND, dtablesize,
++	   ports, MACH_MSG_TYPE_COPY_SEND, _hurd_nports,
++	   ints, INIT_INT_MAX,
+ 	   NULL, 0, NULL, 0);
+ 
+ 	/* Fallback for backwards compatibility.  This can just be removed
+--- a/sysdeps/mach/hurd/i386/libc.abilist
++++ b/sysdeps/mach/hurd/i386/libc.abilist
+@@ -1975,6 +1975,7 @@
+ GLIBC_2.2.6 xprt_unregister F
+ GLIBC_2.21 __mach_host_self_ D 0x4
+ GLIBC_2.21 __pthread_get_cleanup_stack F
++GLIBC_2.21 _hurd_exec_file_name F
+ GLIBC_2.21 pthread_attr_destroy F
+ GLIBC_2.21 pthread_attr_getdetachstate F
+ GLIBC_2.21 pthread_attr_getinheritsched F
+--- a/sysdeps/mach/hurd/x86_64/libc.abilist
++++ b/sysdeps/mach/hurd/x86_64/libc.abilist
+@@ -572,6 +572,7 @@
+ GLIBC_2.38 _hurd_dtablesize D 0x4
+ GLIBC_2.38 _hurd_exception2signal F
+ GLIBC_2.38 _hurd_exec F
++GLIBC_2.38 _hurd_exec_file_name F
+ GLIBC_2.38 _hurd_exec_paths F
+ GLIBC_2.38 _hurd_fd_error F
+ GLIBC_2.38 _hurd_fd_error_signal F

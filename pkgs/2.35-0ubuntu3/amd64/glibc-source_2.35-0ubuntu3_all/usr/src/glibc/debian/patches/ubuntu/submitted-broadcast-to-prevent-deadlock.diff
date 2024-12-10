@@ -1,0 +1,24 @@
+Description: Signal all waiters to prevent a potential deadlock
+
+Bug: https://sourceware.org/bugzilla/show_bug.cgi?id=25847
+Bug-Ubuntu: https://bugs.launchpad.net/ubuntu/+source/glibc/+bug/1899800
+Author: Qin Li <qin.li@thetradedesk.com>
+
+--- a/nptl/pthread_cond_wait.c
++++ b/nptl/pthread_cond_wait.c
+@@ -589,6 +589,15 @@
+ 		     the signal from, which cause it to block using the
+ 		     futex).  */
+ 		  futex_wake (cond->__data.__g_signals + g, 1, private);
++
++		  /* We might be wrong about stealing, we got the signal
++		     from the an old g1, but ended up returning it to
++		     a different g1. We can't tell whether it is the case.
++		     If it is, we now caused another issue:
++		     now g_refs[g1] is one less than g_size[g1].
++		     The mitigation step is to broadcast g1 and g2, let every
++		     waiter wake up spuriosly. */
++		  __pthread_cond_broadcast(cond);
+ 		  break;
+ 		}
+ 	      /* TODO Back off.  */

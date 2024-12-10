@@ -1,0 +1,124 @@
+[Ubuntu note: patch adjusted to include '__FreeBSD_kernel__' definition
+ block in function 'try_connect' (also present in lunar, for example).
+ -- Camila Camargo de Matos <camila.camargodematos@canonical.com>]
+
+Origin: backport, https://sourceware.org/git/?p=glibc.git;a=commit;h=d3f2c2c8b57bdf9d963db8fa2372d6c1b86a337e
+
+From d3f2c2c8b57bdf9d963db8fa2372d6c1b86a337e Mon Sep 17 00:00:00 2001
+From: Siddhesh Poyarekar <siddhesh@sourceware.org>
+Date: Tue, 22 Mar 2022 22:40:05 +0530
+Subject: [PATCH] getaddrinfo: Refactor code for readability
+
+The close_retry goto jump is confusing and clumsy to read, so refactor
+the code a bit to make it easier to follow.
+
+Signed-off-by: Siddhesh Poyarekar <siddhesh@sourceware.org>
+Reviewed-by: DJ Delorie <dj@redhat.com>
+---
+ sysdeps/posix/getaddrinfo.c | 45 +++++++++++++++++++++++++++----------
+ 1 file changed, 33 insertions(+), 12 deletions(-)
+
+Index: glibc-2.35/sysdeps/posix/getaddrinfo.c
+===================================================================
+--- glibc-2.35.orig/sysdeps/posix/getaddrinfo.c
++++ glibc-2.35/sysdeps/posix/getaddrinfo.c
+@@ -2253,6 +2253,49 @@ gaiconf_reload (void)
+     gaiconf_init ();
+ }
+ 
++static bool
++try_connect (int *fdp, int *afp, struct sockaddr_in6 *source_addrp,
++	     const struct sockaddr *addr, socklen_t addrlen, int family)
++{
++  int fd = *fdp;
++  int af = *afp;
++  socklen_t sl = sizeof (*source_addrp);
++  const struct sockaddr *sa = addr;
++#ifdef __FreeBSD_kernel__
++  struct sockaddr_in6 sa_in6;
++  /* The FreeBSD kernel doesn't allow connections on port 0. Use
++     port 1 instead, as on the FreeBSD libc. */
++  if (((struct sockaddr_in *)sa)->sin_port == htons(0))
++  {
++    sa = (struct sockaddr *)&sa_in6;
++    memcpy(&sa_in6, addr, family == AF_INET6 ?
++           sizeof(struct sockaddr_in6) : sizeof(struct sockaddr_in));
++    sa_in6.sin6_port = htons(1);
++  }
++#endif
++
++  while (true)
++    {
++      if (fd != -1 && __connect (fd, sa, addrlen) == 0
++	  && __getsockname (fd, (struct sockaddr *) source_addrp, &sl) == 0)
++	return true;
++
++      if (errno == EAFNOSUPPORT && af == AF_INET6 && family == AF_INET)
++	{
++	  /* This could mean IPv6 sockets are IPv6-only.  */
++	  if (fd != -1)
++	    __close_nocancel_nostatus (fd);
++	  *afp = af = AF_INET;
++	  *fdp = fd = __socket (AF_INET, SOCK_DGRAM | SOCK_CLOEXEC,
++				IPPROTO_IP);
++	  continue;
++	}
++
++      return false;
++    }
++
++  __builtin_unreachable ();
++}
+ 
+ int
+ getaddrinfo (const char *name, const char *service,
+@@ -2443,7 +2486,6 @@ getaddrinfo (const char *name, const cha
+ 	      if (fd == -1 || (af == AF_INET && q->ai_family == AF_INET6))
+ 		{
+ 		  if (fd != -1)
+-		  close_retry:
+ 		    __close_nocancel_nostatus (fd);
+ 		  af = q->ai_family;
+ 		  fd = __socket (af, SOCK_DGRAM | SOCK_CLOEXEC, IPPROTO_IP);
+@@ -2455,27 +2497,10 @@ getaddrinfo (const char *name, const cha
+ 		  __connect (fd, &sa, sizeof (sa));
+ 		}
+ 
+-	      socklen_t sl = sizeof (results[i].source_addr);
+-	      const struct sockaddr *sa = q->ai_addr;
+-#ifdef __FreeBSD_kernel__
+-	      struct sockaddr_in6 sa_in6;
+-	      /* The FreeBSD kernel doesn't allow connections on port 0. Use
+-	         port 1 instead, as on the FreeBSD libc. */
+-	      if (((struct sockaddr_in *)sa)->sin_port == htons(0))
+-		{
+-		  sa = (struct sockaddr *)&sa_in6;
+-		  memcpy(&sa_in6, q->ai_addr, q->ai_family == AF_INET6 ?
+-		       sizeof(struct sockaddr_in6) : sizeof(struct sockaddr_in));
+-		  sa_in6.sin6_port = htons(1);
+-		}
+-#endif
+-	      if (fd != -1
+-		  && __connect (fd, sa, q->ai_addrlen) == 0
+-		  && __getsockname (fd,
+-				    (struct sockaddr *) &results[i].source_addr,
+-				    &sl) == 0)
++	      if (try_connect (&fd, &af, &results[i].source_addr, q->ai_addr,
++			       q->ai_addrlen, q->ai_family))
+ 		{
+-		  results[i].source_addr_len = sl;
++		  results[i].source_addr_len = sizeof (results[i].source_addr);
+ 		  results[i].got_source_addr = true;
+ 
+ 		  if (in6ai != NULL)
+@@ -2540,10 +2565,6 @@ getaddrinfo (const char *name, const cha
+ 		      results[i].source_addr_len = sizeof (struct sockaddr_in);
+ 		    }
+ 		}
+-	      else if (errno == EAFNOSUPPORT && af == AF_INET6
+-		       && q->ai_family == AF_INET)
+-		/* This could mean IPv6 sockets are IPv6-only.  */
+-		goto close_retry;
+ 	      else
+ 		/* Just make sure that if we have to process the same
+ 		   address again we do not copy any memory.  */

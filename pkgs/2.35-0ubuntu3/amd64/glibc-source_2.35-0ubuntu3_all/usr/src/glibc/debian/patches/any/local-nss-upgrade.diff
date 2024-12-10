@@ -1,0 +1,29 @@
+# DP: This patch makes future upgrades easier. It resolves problems with
+# DP: running daemons having NSS modules upgraded out from under them.
+
+---
+ nss/nss_module.c |   17 ++++++++++++++---
+ 1 file changed, 14 insertions(+), 3 deletions(-)
+
+--- a/nss/nss_module.c
++++ b/nss/nss_module.c
+@@ -134,6 +134,19 @@
+ 
+     handle = __libc_dlopen (shlib_name);
+     free (shlib_name);
++    if (handle == NULL)
++      /* Failed to load the library. Try a fallback.  */
++      {
++        if (__asprintf (&shlib_name, "libnss_%s-%d.%d.so",
++                        module->name, __GLIBC__, __GLIBC_MINOR__) < 0)
++          /* This is definitely a temporary failure.  Do not update
++             module->state.  This will trigger another attempt at the next
++             call.  */
++          return false;
++
++        handle = __libc_dlopen (shlib_name);
++        free (shlib_name);
++      }
+   }
+ 
+   /* Failing to load the module can be caused by several different

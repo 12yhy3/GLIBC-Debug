@@ -1,0 +1,161 @@
+From 146fea07640387c78e334933de24b6353e1f0eba Mon Sep 17 00:00:00 2001
+From: "Paul E. Murphy" <murphyp@linux.vnet.ibm.com>
+Date: Fri, 8 May 2020 08:27:56 -0500
+Subject: [PATCH] powerpc: Automatic CPU detection in preconfigure
+
+Added a check to detect the CPU value in preconfigure, so that glibc is
+built with the correct --with-cpu value.  And move existing checks into
+preconfigure.ac.
+
+Co-Authored-By: Carlos Eduardo Seo  <cseo@linux.vnet.ibm.com>
+Co-Authored-By: Tulio Magno Quites Machado Filho  <tuliom@linux.vnet.ibm.com>
+---
+ sysdeps/powerpc/preconfigure    | 62 +++++++++++++++++++++++++++++----
+ sysdeps/powerpc/preconfigure.ac | 58 ++++++++++++++++++++++++++++++
+ 2 files changed, 113 insertions(+), 7 deletions(-)
+ create mode 100644 sysdeps/powerpc/preconfigure.ac
+
+diff --git a/sysdeps/powerpc/preconfigure b/sysdeps/powerpc/preconfigure
+index a0ea745bb4..deac5a41e2 100644
+--- a/sysdeps/powerpc/preconfigure
++++ b/sysdeps/powerpc/preconfigure
+@@ -1,4 +1,5 @@
+-# preconfigure fragment for powerpc.
++# This file is generated from configure.ac by Autoconf.  DO NOT EDIT!
++ # Local preconfigure fragment for sysdeps/powerpc
+ 
+ case "$machine" in
+ powerpc64le)
+@@ -13,12 +14,59 @@ powerpc*)
+   case "$host_os" in
+     *gnuspe*)
+       # SPE support was dropped in glibc 2.30.
+-      # We can't use AC_MSG_ERROR here.
+-      # The parent script is in the middle of printing the
+-      # "checking for sysdeps preconfigure fragments" line.
+-      echo >&2
+-      echo "Host system type $host is no longer supported." >&2
+-      exit 1
++      as_fn_error $? "Host system type $host is no longer supported." "$LINENO" 5
++    ;;
++  esac
++  ;;
++esac
++
++# Lets ask the compiler which Power processor we've got, in case the user did
++# not choose a --with-cpu value.  Scan a trivial generated assembly program
++# and scrape the first
++#   .machine <machine>
++# or
++#   .ascii "-mcpu=<machine>"
++# directive which shows up, and try using it.
++case "${machine}:${submachine}" in
++*powerpc*:)
++  archcpu=`echo "int foo () { return 0; }" \
++	   | $CC $CFLAGS $CPPFLAGS -S -frecord-gcc-switches -xc -o - - \
++	   | grep -E "mcpu=|.machine" -m 1 \
++	   | sed -e "s/.*machine //" -e "s/.*mcpu=\(.*\)\"/\1/"`
++  # Note if you add patterns here you must ensure that an appropriate
++  # directory exists in sysdeps/powerpc.  Likewise, if we find a
++  # cpu, don't let the generic configure append extra compiler options.
++  case "$archcpu" in
++  405fp|440fp|464fp|476fp)
++    submachine=${archcpu%fp}
++    if ${libc_cv_cc_submachine+:} false; then :
++  $as_echo_n "(cached) " >&6
++else
++  libc_cv_cc_submachine=""
++fi
++
++    ;;
++  405|440|464|476)
++    submachine=${archcpu}
++    if ${libc_cv_cc_submachine+:} false; then :
++  $as_echo_n "(cached) " >&6
++else
++  libc_cv_cc_submachine=""
++fi
++
++    ;;
++
++  a2|970|power[4-9]|power5x|power6+)
++    submachine=${archcpu}
++    if ${libc_cv_cc_submachine+:} false; then :
++  $as_echo_n "(cached) " >&6
++else
++  libc_cv_cc_submachine=""
++fi
++
++    ;;
++  *)
++    # We couldn't figure it out, assume none
+     ;;
+   esac
+   ;;
+diff --git a/sysdeps/powerpc/preconfigure.ac b/sysdeps/powerpc/preconfigure.ac
+new file mode 100644
+index 0000000000..e6a5ae93a5
+--- /dev/null
++++ b/sysdeps/powerpc/preconfigure.ac
+@@ -0,0 +1,58 @@
++GLIBC_PROVIDES dnl See aclocal.m4 in the top level source directory.
++# Local preconfigure fragment for sysdeps/powerpc
++
++case "$machine" in
++powerpc64le)
++  base_machine=powerpc machine=powerpc/powerpc64/le
++  ;;
++powerpc64*)
++  base_machine=powerpc machine=powerpc/powerpc64/be
++  ;;
++powerpc*)
++  base_machine=powerpc machine=powerpc/powerpc32
++  with_fp_cond="!defined __NO_FPRS__"
++  case "$host_os" in
++    *gnuspe*)
++      # SPE support was dropped in glibc 2.30.
++      AC_MSG_ERROR([Host system type $host is no longer supported.])
++    ;;
++  esac
++  ;;
++esac
++
++# Lets ask the compiler which Power processor we've got, in case the user did
++# not choose a --with-cpu value.  Scan a trivial generated assembly program
++# and scrape the first
++#   .machine <machine>
++# or
++#   .ascii "-mcpu=<machine>"
++# directive which shows up, and try using it.
++case "${machine}:${submachine}" in
++*powerpc*:)
++  archcpu=`echo "int foo () { return 0; }" \
++	   | $CC $CFLAGS $CPPFLAGS -S -frecord-gcc-switches -xc -o - - \
++	   | grep -E "mcpu=|[.]machine" -m 1 \
++	   | sed -e "s/.*machine //" -e "s/.*mcpu=\(.*\)\"/\1/"`
++  # Note if you add patterns here you must ensure that an appropriate
++  # directory exists in sysdeps/powerpc.  Likewise, if we find a
++  # cpu, don't let the generic configure append extra compiler options.
++  case "$archcpu" in
++  405fp|440fp|464fp|476fp)
++    submachine=${archcpu%fp}
++    AC_CACHE_VAL(libc_cv_cc_submachine,libc_cv_cc_submachine="")
++    ;;
++  405|440|464|476)
++    submachine=${archcpu}
++    AC_CACHE_VAL(libc_cv_cc_submachine,libc_cv_cc_submachine="")
++    ;;
++
++  a2|970|power[[4-9]]|power5x|power6+)
++    submachine=${archcpu}
++    AC_CACHE_VAL(libc_cv_cc_submachine,libc_cv_cc_submachine="")
++    ;;
++  *)
++    # We couldn't figure it out, assume none
++    ;;
++  esac
++  ;;
++esac
+-- 
+2.27.0
+

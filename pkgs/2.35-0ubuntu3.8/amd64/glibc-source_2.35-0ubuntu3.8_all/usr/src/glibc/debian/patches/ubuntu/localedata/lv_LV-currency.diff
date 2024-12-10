@@ -1,0 +1,24 @@
+Description: Changed to currency EUR/‬€
+Bug-Ubuntu: https://launchpad.net/bugs/1264551
+Forwarded: https://sourceware.org/bugzilla/show_bug.cgi?id=16374
+Author: Gunnar Hjalmarsson <gunnarhj@ubuntu.com>
+
+--- a/localedata/locales/lv_LV
++++ b/localedata/locales/lv_LV
+@@ -138,12 +138,12 @@
+ negative_sign     "-"
+ int_frac_digits   2
+ frac_digits       2
+-p_cs_precedes     1
++p_cs_precedes     0
+ p_sep_by_space    1
+-n_cs_precedes     1
++n_cs_precedes     0
+ n_sep_by_space    1
+-p_sign_posn       3
+-n_sign_posn       3
++p_sign_posn       1
++n_sign_posn       1
+ END LC_MONETARY
+ 
+ LC_NUMERIC
